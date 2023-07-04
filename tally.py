@@ -53,8 +53,6 @@ def main():
     if google_credentials.expired and google_credentials.refresh_token:
         google_credentials.refresh(Request())
 
-    splitwise_key_file_path = 'config/splitwise_secrets.json'
-
     try:
         #Get splitwise secrets
         CONSUMER_KEY = get_splitwise_secret('consumer_key')
@@ -64,15 +62,12 @@ def main():
 
         service = build('sheets', 'v4', credentials=google_credentials)
 
-        result = service.spreadsheets().values().get(
-            spreadsheetId=SPREADSHEET_ID, range=CELL_RANGE).execute()
-        rows = result.get('values', [])
-        print(f"{len(rows)} rows retrieved")
-
         sObj = Splitwise(CONSUMER_KEY,CONSUMER_SECRET,api_key=API_KEY)
 
         notifications = sObj.getNotifications()
-        exp_id = notifications[0].source.id
+        notifications.reverse() #Sort earliest date first
+        import pdb;
+        pdb.set_trace()
         for notification in notifications:
             if notification.getType() in EXPENSE_TYPE:
                 exp_id = notification.source.id
@@ -88,13 +83,14 @@ def main():
                             print("PRODUCT:",PRODUCT)
                             print(OWED_SHARE)
                             print("NOTES:",NOTES)
-                            print("____________")
-        
-        # current = sObj.getCurrentUser()
-        # friends = sObj.getFriends()
-        # print(current)
-
-
+                            values = [[DATE,PRODUCT,OWED_SHARE,NOTES]]
+                            body = {
+                                'values': values
+                            }
+                            result = service.spreadsheets().values().append(
+                                spreadsheetId=SPREADSHEET_ID, range=CELL_RANGE,
+                                valueInputOption='USER_ENTERED', body=body).execute()
+                            print("___________________")
         return result
         
         
