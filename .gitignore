@@ -1,0 +1,8 @@
+config/
+
+service_acccount_secrets.json
+splitwise_secrets.json
+spreadsheet_secrets.json
+
+__pycache__/
+*.py[cod]
