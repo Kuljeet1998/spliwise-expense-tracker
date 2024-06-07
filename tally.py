@@ -13,16 +13,18 @@ from httplib2 import Http
 from google.oauth2 import service_account
 from splitwise import Splitwise
 from settings.base import get_splitwise_secret, get_spreadsheet_secret
-from utils import convert_date
+from utils import convert_date, get_todays_date
 
 import os
 
 os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 
+UPDATE_METHOD = 'EXPENSES'
+
 SPREADSHEET_ID = get_spreadsheet_secret('spreadsheet_id')
 CELL_RANGE = 'July'
 redirect_uri = 'https://secure.splitwise.com/#/dashboard'
-EXPENSE_TYPE = [0,1,2]
+EXPENSE_TYPE = [0,2]
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/documents.readonly',
@@ -36,7 +38,7 @@ def get_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-d", help="Date till tally",
-                        default='')
+                        default=get_todays_date())
 
     args = parser.parse_args()
     return args
@@ -45,7 +47,7 @@ def get_args():
 def main():
     args = get_args()
     if args.d is not None:
-        DATE = args.d
+        DATE = '{}T00:00:00'.format(args.d)
     print("Tallying from {}".format(DATE))
     google_key_file_path = 'config/service_account_secrets.json'
     google_credentials = service_account.Credentials.from_service_account_file(google_key_file_path,scopes=SCOPES)
@@ -63,35 +65,66 @@ def main():
         service = build('sheets', 'v4', credentials=google_credentials)
 
         sObj = Splitwise(CONSUMER_KEY,CONSUMER_SECRET,api_key=API_KEY)
-
-        notifications = sObj.getNotifications()
-        notifications.reverse() #Sort earliest date first
-        import pdb;
-        pdb.set_trace()
-        for notification in notifications:
-            if notification.getType() in EXPENSE_TYPE:
-                exp_id = notification.source.id
-                expense = sObj.getExpense(exp_id)
-                
-                for user in expense.users:
-                    if user.id == USER_ID: #Kuljeet
-                        OWED_SHARE = user.owed_share
-                        if OWED_SHARE != '0.0':
-                            DATE = convert_date(expense.date)
+        
+        if UPDATE_METHOD == 'NOTIFICATOION':
+            notifications = sObj.getNotifications()
+            notifications.reverse() #Sort earliest date first
+            for notification in notifications:
+                if notification.getType() in EXPENSE_TYPE:
+                    exp_id = notification.source.id
+                    expense = sObj.getExpense(exp_id)
+                    
+                    for user in expense.users:
+                        if user.id == USER_ID: #Kuljeet
+                            OWED_SHARE = user.owed_share
                             PRODUCT = expense.description
-                            NOTES = '{}/{}'.format(expense.cost,len(expense.users))
-                            print("PRODUCT:",PRODUCT)
-                            print(OWED_SHARE)
-                            print("NOTES:",NOTES)
-                            values = [[DATE,PRODUCT,OWED_SHARE,NOTES]]
-                            body = {
-                                'values': values
-                            }
-                            result = service.spreadsheets().values().append(
-                                spreadsheetId=SPREADSHEET_ID, range=CELL_RANGE,
-                                valueInputOption='USER_ENTERED', body=body).execute()
-                            print("___________________")
-        return result
+                            if OWED_SHARE != '0.0' and PRODUCT!='Payment':
+                                DATE = convert_date(expense.date)
+                                
+                                NOTES = '{}/{}'.format(expense.cost,len(expense.users))
+                                print("PRODUCT:",PRODUCT)
+                                print(OWED_SHARE)
+                                print("NOTES:",NOTES)
+                                values = [[DATE,PRODUCT,OWED_SHARE,NOTES]]
+                                body = {
+                                    'values': values
+                                }
+                                result = service.spreadsheets().values().append(
+                                    spreadsheetId=SPREADSHEET_ID, range=CELL_RANGE,
+                                    valueInputOption='USER_ENTERED', body=body).execute()
+                                print("___________________")
+        else:
+            expenses = sObj.getExpenses()
+            COUNT = 0
+            for expense in expenses:
+                if expense.deleted_by != None:
+                    continue
+                if COUNT == 3:
+                    break
+                else:
+                    for user in expense.users:
+                        if user.id == USER_ID: #Kuljeet
+                            OWED_SHARE = user.owed_share
+                            PRODUCT = expense.description
+                            if OWED_SHARE != '0.0' and PRODUCT!='Payment':
+                                DATE = convert_date(expense.date)
+                                
+                                NOTES = '{}/{}'.format(expense.cost,len(expense.users))
+                                print("PRODUCT:",PRODUCT)
+                                print(OWED_SHARE)
+                                print("NOTES:",NOTES)
+                                values = [[DATE,PRODUCT,OWED_SHARE,NOTES]]
+                                body = {
+                                    'values': values
+                                }
+                                result = service.spreadsheets().values().append(
+                                    spreadsheetId=SPREADSHEET_ID, range=CELL_RANGE,
+                                    valueInputOption='USER_ENTERED', body=body).execute()
+                                print("___________________")
+                COUNT = COUNT + 1
+
+        print("Updated!")
+        return
         
         
     except HttpError as err:
